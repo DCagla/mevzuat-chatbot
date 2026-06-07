@@ -1,20 +1,41 @@
 # Mevzuat MCP Chatbot
 
-Bu proje, MCP (Model Context Protocol) tabanlı bir mevzuat sunucusu kullanarak mevzuat sorgularına cevap verebilen bir chatbot uygulamasıdır.
+Bu proje, MCP (Model Context Protocol) tabanlı bir mevzuat chatbot uygulamasıdır.
 
-## Proje Mimarisi
+Sistem; React tabanlı frontend, FastAPI tabanlı backend, Azure Container Apps üzerinde çalışan bir MCP Server ve OpenAI entegrasyonundan oluşmaktadır.
 
-Proje aşağıdaki bileşenlerden oluşmaktadır:
+## Kullanılan Teknolojiler
 
-* MCP Server
-* Python FastAPI Backend
-* React Frontend
-* OpenAI Entegrasyonu
-* Streaming Yanıt Desteği
+* React
+* FastAPI
+* OpenAI
+* MCP (Model Context Protocol)
+* Docker
+* Azure Container Apps
 
-İstek akışı:
+## Mimari
 
-Frontend → Backend → MCP Server → OpenAI → Kullanıcı
+```text
+Kullanıcı
+    │
+    ▼
+React Frontend
+    │
+    ▼
+FastAPI Backend
+    │
+    ▼
+MCP Server
+    │
+    ▼
+Mevzuat Verisi
+    │
+    ▼
+OpenAI
+    │
+    ▼
+Yanıt
+```
 
 ## MCP Server
 
@@ -26,9 +47,11 @@ Repository Dockerize edilmiş ve Azure Container Apps ortamına deploy edilmişt
 
 MCP Endpoint:
 
+```text
 https://mevzuat-mcp.bluesand-13d8735a.westus2.azurecontainerapps.io/mcp
+```
 
-Backend aşağıdaki MCP tool'larını kullanmaktadır:
+Kullanılan MCP tool'ları:
 
 * search_mevzuat
 * get_mevzuat_content
@@ -59,13 +82,13 @@ USE_MOCK_LLM=false
 MCP_SERVER_URL=https://mevzuat-mcp.bluesand-13d8735a.westus2.azurecontainerapps.io/mcp
 ```
 
-Backend'i çalıştırın:
+Backend uygulamasını çalıştırın:
 
 ```bash
 uvicorn app.main:app --reload --port 8001
 ```
 
-Health endpoint:
+Health Check:
 
 ```text
 http://localhost:8001/health
@@ -85,7 +108,7 @@ Bağımlılıkları yükleyin:
 npm install
 ```
 
-Frontend'i çalıştırın:
+Frontend uygulamasını çalıştırın:
 
 ```bash
 npm run dev
@@ -99,33 +122,11 @@ http://localhost:5173
 
 ## API Endpointleri
 
-Normal Chat:
-
-```text
-POST /chat
-```
-
-Streaming Chat:
-
-```text
-POST /chat/stream
-```
-
-## Test Edilen MCP Tool'ları
-
-* search_mevzuat
-* get_mevzuat_content
-* search_within_mevzuat
-* get_mevzuat_madde_tree
-* get_mevzuat_gerekce
-
-## Notlar
-
-* MCP Server Azure Container Apps üzerinde çalışmaktadır.
-* Backend ve frontend lokal ortamda çalışmaktadır.
-* Streaming yanıt desteği bulunmaktadır.
-* OpenAI yalnızca MCP tool çıktıları üzerinden cevap üretmektedir.
+| Endpoint     | Method |
+| ------------ | ------ |
+| /chat        | POST   |
+| /chat/stream | POST   |
 
 ## Konfigürasyon
 
-Projenin çalıştırılması için gerekli ortam değişkenleri `backend/.env.example` dosyasında örnek olarak verilmiştir.
+Projede kullanılacak örnek ortam değişkenleri `backend/.env.example` dosyasında paylaşılmıştır.
