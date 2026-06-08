@@ -1,257 +1,245 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import "./App.css";
+
+const API_BASE_URL = "http://localhost:8001";
+
+const INITIAL_ASSISTANT_MESSAGE = {
+  role: "assistant",
+  content: "Merhaba, mevzuat hakkında bir soru sorabilirsiniz.",
+};
 
 function App() {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      content: "Merhaba, mevzuat hakkında bir soru sorabilirsiniz.",
-    },
-  ]);
+  const [messages, setMessages] = useState([INITIAL_ASSISTANT_MESSAGE]);
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
+
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, status]);
+
+  const appendToLastAssistantMessage = (chunk) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const lastIndex = updated.length - 1;
+
+      updated[lastIndex] = {
+        ...updated[lastIndex],
+        content: updated[lastIndex].content + chunk,
+      };
+
+      return updated;
+    });
+  };
+
+  const replaceLastAssistantMessage = (content) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const lastIndex = updated.length - 1;
+
+      updated[lastIndex] = {
+        role: "assistant",
+        content,
+      };
+
+      return updated;
+    });
+  };
+
+  const getConversationPayload = (nextUserMessage) => {
+    return messages
+      .filter((message) => message.content.trim())
+      .concat({
+        role: "user",
+        content: nextUserMessage,
+      })
+      .slice(-12);
+  };
+
+  const parseSSEBlock = (block) => {
+    const lines = block.split("\n");
+    let eventName = "message";
+    let data = "";
+
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventName = line.replace("event:", "").trim();
+      }
+
+      if (line.startsWith("data:")) {
+        data += line.replace("data:", "").trim();
+      }
+    }
+
+    if (!data) return;
+
+    const parsedData = JSON.parse(data);
+
+    if (eventName === "status") {
+      setStatus(parsedData);
+    }
+
+    if (eventName === "token") {
+      setStatus("");
+      appendToLastAssistantMessage(parsedData);
+    }
+
+    if (eventName === "error") {
+      setStatus("");
+      replaceLastAssistantMessage(parsedData);
+    }
+
+    if (eventName === "done") {
+      setStatus("");
+    }
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
     const question = input.trim();
+    const conversationPayload = getConversationPayload(question);
 
-    const userMessage = {
-      role: "user",
-      content: question,
-    };
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: question },
+      { role: "assistant", content: "" },
+    ]);
 
-    const assistantMessage = {
-      role: "assistant",
-      content: "",
-    };
-
-    setMessages((prev) => [...prev, userMessage, assistantMessage]);
     setInput("");
     setLoading(true);
+    setStatus("Yanıt hazırlanıyor...");
 
     try {
-      const response = await fetch("http://localhost:8001/chat/stream", {
+      const response = await fetch(`${API_BASE_URL}/chat/stream`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Accept: "text/event-stream",
         },
         body: JSON.stringify({
-          message: question,
+          messages: conversationPayload,
         }),
       });
 
+      if (!response.ok) {
+        throw new Error(`Backend HTTP error: ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error("Streaming response body bulunamadı.");
+      }
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
+      let buffer = "";
 
       while (true) {
         const { value, done } = await reader.read();
+
         if (done) break;
 
-        const chunk = decoder.decode(value);
+        buffer += decoder.decode(value, { stream: true });
 
-        setMessages((prev) => {
-          const updated = [...prev];
-          const lastIndex = updated.length - 1;
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop() || "";
 
-          updated[lastIndex] = {
-            ...updated[lastIndex],
-            content: updated[lastIndex].content + chunk,
-          };
+        for (const block of blocks) {
+          parseSSEBlock(block);
+        }
+      }
 
-          return updated;
-        });
+      if (buffer.trim()) {
+        parseSSEBlock(buffer);
       }
     } catch (error) {
       console.error(error);
 
-      setMessages((prev) => {
-        const updated = [...prev];
-        const lastIndex = updated.length - 1;
-
-        updated[lastIndex] = {
-          role: "assistant",
-          content:
-            "Bir hata oluştu. Lütfen backend ve MCP server'ın çalıştığını kontrol edin.",
-        };
-
-        return updated;
-      });
+      replaceLastAssistantMessage(
+        "Bir hata oluştu. Lütfen backend'in çalıştığını, OPENAI_API_KEY değerini ve MCP server bağlantısını kontrol edin."
+      );
     } finally {
+      setStatus("");
       setLoading(false);
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
       sendMessage();
     }
   };
 
   return (
-    <div
-      style={{
-        height: "100vh",
-        backgroundColor: "#f6f7f9",
-        fontFamily: "Arial, sans-serif",
-        display: "flex",
-        justifyContent: "center",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: "900px",
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          backgroundColor: "#ffffff",
-          borderLeft: "1px solid #e5e7eb",
-          borderRight: "1px solid #e5e7eb",
-          overflow: "hidden",
-          textAlign: "left",
-        }}
-      >
-        <div
-          style={{
-            padding: "18px 24px",
-            borderBottom: "1px solid #e5e7eb",
-            textAlign: "center",
-            flexShrink: 0,
-          }}
-        >
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "28px",
-              lineHeight: "1.2",
-            }}
-          >
-            Mevzuat Chatbot
-          </h1>
+    <main className="app-shell">
+      <section className="chat-container">
+        <header className="chat-header">
+          <h1>Mevzuat Chatbot</h1>
+          <p>Mevzuat asistanı</p>
+        </header>
 
-          <p
-            style={{
-              margin: "6px 0 0",
-              color: "#6b7280",
-              fontSize: "14px",
-            }}
-          >
-            MCP tabanlı mevzuat asistanı
-          </p>
-        </div>
+        <section className="messages-panel">
+          {messages.map((message, index) => {
+            const isUser = message.role === "user";
+            const isLast = index === messages.length - 1;
+            const showTyping = loading && isLast && !message.content && !isUser;
 
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "24px",
-            backgroundColor: "#ffffff",
-          }}
-        >
-          {messages.map((msg, index) => (
-            <div
-              key={index}
-              style={{
-                display: "flex",
-                justifyContent:
-                  msg.role === "user" ? "flex-end" : "flex-start",
-                marginBottom: "16px",
-                width: "100%",
-              }}
-            >
-              <div
-                style={{
-                  width: "fit-content",
-                  maxWidth: "75%",
-                  padding: "14px 16px",
-                  borderRadius: "14px",
-                  backgroundColor:
-                    msg.role === "user" ? "#2563eb" : "#f3f4f6",
-                  color: msg.role === "user" ? "#ffffff" : "#111827",
-                  whiteSpace: "pre-wrap",
-                  textAlign: "left",
-                  lineHeight: "1.6",
-                  fontSize: "15px",
-                  overflowWrap: "break-word",
-                  wordBreak: "break-word",
-                }}
+            return (
+              <article
+                key={`${message.role}-${index}`}
+                className={`message-row ${
+                  isUser ? "message-row-user" : "message-row-bot"
+                }`}
               >
                 <div
-                  style={{
-                    fontSize: "12px",
-                    fontWeight: "bold",
-                    marginBottom: "6px",
-                    opacity: 0.75,
-                    textAlign: "left",
-                  }}
+                  className={`message-bubble ${
+                    isUser ? "user-bubble" : "bot-bubble"
+                  }`}
                 >
-                  {msg.role === "user" ? "Siz" : "Mevzuat Bot"}
+                  <div className="message-label">
+                    {isUser ? "Siz" : "Mevzuat Bot"}
+                  </div>
+
+                  <div className="message-content">
+                    {showTyping ? (
+                      <span className="typing-indicator">
+                        {status || "Yanıt hazırlanıyor"}
+                        <span>.</span>
+                        <span>.</span>
+                        <span>.</span>
+                      </span>
+                    ) : (
+                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                    )}
+                  </div>
                 </div>
+              </article>
+            );
+          })}
 
-                <div>{msg.content || "Yanıt hazırlanıyor..."}</div>
-              </div>
-            </div>
-          ))}
-        </div>
+          <div ref={messagesEndRef} />
+        </section>
 
-        <div
-          style={{
-            padding: "16px 24px",
-            borderTop: "1px solid #e5e7eb",
-            backgroundColor: "#ffffff",
-            flexShrink: 0,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              gap: "10px",
-              alignItems: "stretch",
-            }}
-          >
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Örn: İş Kanunu nedir?"
-              rows={2}
-              disabled={loading}
-              style={{
-                flex: 1,
-                resize: "none",
-                padding: "12px",
-                borderRadius: "10px",
-                border: "1px solid #d1d5db",
-                fontSize: "15px",
-                fontFamily: "inherit",
-                lineHeight: "1.5",
-                outline: "none",
-                textAlign: "left",
-              }}
-            />
+        <footer className="composer">
+          <textarea
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Örn: İş Kanunu nedir?"
+            rows={2}
+            disabled={loading}
+          />
 
-            <button
-              onClick={sendMessage}
-              disabled={loading}
-              style={{
-                padding: "0 22px",
-                borderRadius: "10px",
-                border: "none",
-                backgroundColor: loading ? "#9ca3af" : "#2563eb",
-                color: "#ffffff",
-                fontSize: "15px",
-                cursor: loading ? "not-allowed" : "pointer",
-                minWidth: "90px",
-              }}
-            >
-              {loading ? "..." : "Gönder"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+          <button onClick={sendMessage} disabled={loading || !input.trim()}>
+            {loading ? "Yanıtlanıyor" : "Gönder"}
+          </button>
+        </footer>
+      </section>
+    </main>
   );
 }
 

@@ -1,8 +1,10 @@
-import asyncio
+import json
+from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.llm_service import LLMService
 from app.mcp_client import MCPClient
@@ -21,60 +23,55 @@ llm_service = LLMService()
 mcp_client = MCPClient()
 
 
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+
+
 @app.get("/health")
 def health_check():
     return {
         "status": "healthy",
-        "service": "Mevzuat Chatbot Backend"
-    }
-
-
-@app.get("/test-content")
-async def test_content():
-    result = await mcp_client.get_mevzuat_content("103054")
-    return {"result": str(result)}
-
-
-@app.get("/test-tree")
-async def test_tree():
-    result = await mcp_client.get_mevzuat_madde_tree("103054")
-    return {"result": str(result)}
-
-
-@app.get("/test-search-within")
-async def test_search_within():
-    result = await mcp_client.search_within_mevzuat(
-        "103054",
-        "fazla çalışma"
-    )
-    return {"result": str(result)}
-
-
-@app.get("/test-gerekce")
-async def test_gerekce():
-    search_result = await mcp_client.search_mevzuat("iş kanunu")
-    return {
-        "note": "Gerekçe tool'u için search_mevzuat sonucunda gerekce_id varsa kullanılmalıdır.",
-        "search_result": str(search_result)
+        "service": "Mevzuat Chatbot Backend",
     }
 
 
 @app.post("/chat")
-async def chat(payload: dict):
-    message = payload.get("message", "")
-    answer = await llm_service.process_message(message)
+async def chat(payload: ChatRequest):
+    messages = [message.model_dump() for message in payload.messages]
+    answer = await llm_service.process_message(messages)
     return {"answer": answer}
 
 
 @app.post("/chat/stream")
-async def chat_stream(payload: dict):
-    message = payload.get("message", "")
-
+async def chat_stream(payload: ChatRequest):
     async def generate():
-        answer = await llm_service.process_message(message)
+        try:
+            messages = [message.model_dump() for message in payload.messages]
 
-        for char in answer:
-            yield char
-            await asyncio.sleep(0.003)
+            async for event in llm_service.stream_events(messages):
+                yield (
+                    f"event: {event['event']}\n"
+                    f"data: {json.dumps(event['data'])}\n\n"
+                )
 
-    return StreamingResponse(generate(), media_type="text/plain")
+        except Exception as exc:
+            error_message = (
+                "Bir hata oluştu. Lütfen backend loglarını, OPENAI_API_KEY değerini "
+                f"ve MCP server bağlantısını kontrol edin. Hata: {type(exc).__name__}: {str(exc)}"
+            )
+            yield f"event: error\ndata: {json.dumps(error_message)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

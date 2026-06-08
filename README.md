@@ -1,19 +1,31 @@
-# Mevzuat MCP Chatbot
+# Mevzuat Chatbot
 
-Bu proje, MCP (Model Context Protocol) tabanlı bir mevzuat chatbot uygulamasıdır.
+Bu proje, OpenAI Tool Calling ve Model Context Protocol (MCP) kullanılarak geliştirilmiş bir mevzuat asistanıdır.
 
-Sistem; React tabanlı frontend, FastAPI tabanlı backend, Azure Container Apps üzerinde çalışan bir MCP Server ve OpenAI entegrasyonundan oluşmaktadır.
+Kullanıcılar mevzuatlarla ilgili sorular sorabilir, mevzuat içeriklerini görüntüleyebilir, mevzuat içerisinde arama yapabilir ve gerekçe bilgilerine erişebilir.
 
 ## Kullanılan Teknolojiler
 
+### Frontend
+
 * React
+* React Markdown
+* Server-Sent Events (SSE)
+
+### Backend
+
 * FastAPI
-* OpenAI
-* MCP (Model Context Protocol)
+* OpenAI API
+* FastMCP Client
+
+### MCP Server
+
 * Docker
 * Azure Container Apps
 
-## Mimari
+---
+
+# Mimari
 
 ```text
 Kullanıcı
@@ -25,33 +37,24 @@ React Frontend
 FastAPI Backend
     │
     ▼
+OpenAI Tool Calling
+    │
+    ▼
 MCP Server
     │
     ▼
 Mevzuat Verisi
-    │
-    ▼
-OpenAI
-    │
-    ▼
-Yanıt
 ```
 
-## MCP Server
+Frontend ve backend yerel ortamda çalışmaktadır.
 
-Case study kapsamında verilen aşağıdaki repository kullanılmıştır:
+MCP server Azure Container Apps üzerinde yayınlanmıştır ve backend tarafından uzaktan kullanılmaktadır.
 
-https://github.com/saidsurucu/mevzuat-mcp
+---
 
-Repository Dockerize edilmiş ve Azure Container Apps ortamına deploy edilmiştir.
+# Kullanılan MCP Tool'ları
 
-MCP Endpoint:
-
-```text
-https://mevzuat-mcp.bluesand-13d8735a.westus2.azurecontainerapps.io/mcp
-```
-
-Kullanılan MCP tool'ları:
+Projede aşağıdaki MCP tool'ları kullanılmaktadır:
 
 * search_mevzuat
 * get_mevzuat_content
@@ -59,7 +62,24 @@ Kullanılan MCP tool'ları:
 * get_mevzuat_madde_tree
 * get_mevzuat_gerekce
 
-## Backend Kurulumu
+OpenAI modeli, kullanıcı sorusuna göre hangi tool'un kullanılacağına kendisi karar vermektedir.
+
+---
+
+# Özellikler
+
+* Mevzuat arama
+* Mevzuat içeriği görüntüleme
+* Mevzuat içinde arama
+* Gerekçe sorgulama
+* Çok adımlı tool çağrıları
+* Konuşma geçmişi desteği
+* Streaming cevaplar
+* Tool durum bildirimleri
+
+---
+
+# Backend Kurulumu
 
 Backend klasörüne geçin:
 
@@ -67,34 +87,41 @@ Backend klasörüne geçin:
 cd backend
 ```
 
-Gerekli paketleri yükleyin:
+Bağımlılıkları yükleyin:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-`backend/.env` dosyasını oluşturun:
+`.env` dosyası oluşturun:
 
 ```env
-OPENAI_API_KEY=your-openai-api-key
+OPENAI_API_KEY=your-api-key
+
 OPENAI_MODEL=gpt-5.4-mini
+
 USE_MOCK_LLM=false
+
 MCP_SERVER_URL=https://mevzuat-mcp.bluesand-13d8735a.westus2.azurecontainerapps.io/mcp
 ```
 
-Backend uygulamasını çalıştırın:
+Backend'i çalıştırın:
 
 ```bash
 uvicorn app.main:app --reload --port 8001
 ```
 
-Health Check:
+Backend varsayılan olarak:
 
 ```text
-http://localhost:8001/health
+http://localhost:8001
 ```
 
-## Frontend Kurulumu
+adresinde çalışır.
+
+---
+
+# Frontend Kurulumu
 
 Frontend klasörüne geçin:
 
@@ -108,24 +135,55 @@ Bağımlılıkları yükleyin:
 npm install
 ```
 
-Frontend uygulamasını çalıştırın:
+Frontend'i başlatın:
 
 ```bash
 npm run dev
 ```
 
-Frontend URL:
+Frontend varsayılan olarak:
 
 ```text
 http://localhost:5173
 ```
 
-## API Endpointleri
+adresinde çalışır.
 
-| Endpoint     | Method |
-| ------------ | ------ |
-| /chat        | POST   |
-| /chat/stream | POST   |
+---
+
+# API
+
+## POST /chat
+
+Streaming olmayan cevap üretir.
+
+## POST /chat/stream
+
+Streaming cevap üretir.
+
+Konuşma geçmişi aşağıdaki formatta gönderilir:
+
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "4857 sayılı İş Kanunu nedir?"
+    }
+  ]
+}
+```
+
+---
+
+# Notlar
+
+* Sistem OpenAI Tool Calling kullanmaktadır.
+* Manuel keyword routing kullanılmamaktadır.
+* Tool seçimleri model tarafından yapılmaktadır.
+* MCP server Azure Container Apps üzerinde çalışmaktadır.
+* Frontend ve backend yerel ortamda çalışmaktadır.
+
 
 ## Konfigürasyon
 
